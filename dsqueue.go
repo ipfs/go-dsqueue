@@ -153,7 +153,6 @@ func (q *DSQueue) worker(ctx context.Context, bufferSize, dedupCacheSize int, id
 			if err := q.ds.Put(ctx, k, nil); err != nil {
 				log.Errorw("failed to write item to datastore", "err", err, "qname", q.name)
 			}
-			counter++
 		}
 		if inBuf.Len() != 0 {
 			err := q.commitInput(ctx, counter, &inBuf)
@@ -219,6 +218,7 @@ func (q *DSQueue) worker(ctx context.Context, bufferSize, dedupCacheSize int, id
 				// the input buffer.
 				item = inBuf.PopFront()
 				k = makeKey(item, counter)
+				counter++
 			}
 		}
 
