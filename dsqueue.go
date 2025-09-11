@@ -127,7 +127,7 @@ func (q *DSQueue) Name() string {
 
 func makeKey(item string, counter uint64) datastore.Key {
 	b64Item := base64.RawURLEncoding.EncodeToString([]byte(item))
-	return datastore.NewKey(fmt.Sprintf("%020d/%s", counter, b64Item))
+	return datastore.NewKey(fmt.Sprintf("%016x/%s", counter, b64Item))
 }
 
 // worker run dequeues and enqueues when available.
