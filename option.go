@@ -64,11 +64,11 @@ func WithDedupCacheSize(n int) Option {
 // WithIdleWriteTime sets the amout of time that the queue must be idle (no
 // input or output) before all buffered input items are written to the
 // datastore. A value of zero means that buffered input items are not
-// automatically flushed to the datastore. This value must be greater than one
-// second.
+// automatically flushed to the datastore. A non-zero value must be greater
+// than one second.
 func WithIdleWriteTime(d time.Duration) Option {
 	return func(c *config) {
-		if d < time.Second {
+		if d != 0 && d < time.Second {
 			d = time.Second
 		}
 		c.idleWriteTime = d

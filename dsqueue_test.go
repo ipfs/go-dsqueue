@@ -10,6 +10,7 @@ import (
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/namespace"
+	"github.com/ipfs/go-datastore/query"
 	"github.com/ipfs/go-datastore/sync"
 	"github.com/ipfs/go-dsqueue"
 	"github.com/ipfs/go-test/random"
@@ -48,6 +49,17 @@ func TestBasicOperation(t *testing.T) {
 	queue := dsqueue.New(ds, dsqName)
 	defer queue.Close()
 
+	if queue.Name() != dsqName {
+		t.Fatal("wrong queue name")
+	}
+
+	queue.Enqueue(nil)
+	select {
+	case <-queue.Dequeue():
+		t.Fatal("nothing should be in queue")
+	case <-time.After(time.Millisecond):
+	}
+
 	cids := random.Cids(10)
 	for _, c := range cids {
 		queue.Enqueue(c.Bytes())
@@ -61,6 +73,11 @@ func TestBasicOperation(t *testing.T) {
 	}
 	if err = queue.Close(); err != nil {
 		t.Fatal(err)
+	}
+
+	err = queue.Enqueue(cids[0].Bytes())
+	if err == nil {
+		t.Fatal("expected error calling Enqueue after Close")
 	}
 }
 
@@ -113,28 +130,62 @@ func TestInitialization(t *testing.T) {
 	assertOrdered(cids[5:], queue, t)
 }
 
-func TestInitializationWithManyCids(t *testing.T) {
+func TestIdleFlush(t *testing.T) {
 	ds := sync.MutexWrap(datastore.NewMapDatastore())
-	queue := dsqueue.New(ds, dsqName, dsqueue.WithBufferSize(25))
+	queue := dsqueue.New(ds, dsqName, dsqueue.WithIdleWriteTime(time.Millisecond))
 	defer queue.Close()
 
-	cids := random.Cids(100)
+	cids := random.Cids(10)
 	for _, c := range cids {
 		queue.Enqueue(c.Bytes())
 	}
 
-	/*
-		err := queue.Close()
-		if err != nil {
-			t.Fatal(err)
+	dsn := namespace.Wrap(ds, datastore.NewKey("/dsq-"+dsqName))
+	time.Sleep(10 * time.Millisecond)
+
+	ctx := context.Background()
+	n, err := countItems(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatal("expected nothing in datastore")
+	}
+
+	time.Sleep(2 * time.Second)
+
+	n, err = countItems(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expect := len(cids) - 1
+	if n != expect {
+		t.Fatalf("should have flushed %d cids to datastore, got %d", expect, n)
+	}
+}
+
+func countItems(ctx context.Context, ds datastore.Datastore) (int, error) {
+	qry := query.Query{
+		KeysOnly: true,
+	}
+	results, err := ds.Query(ctx, qry)
+	if err != nil {
+		return 0, fmt.Errorf("cannot query datastore: %w", err)
+	}
+	defer results.Close()
+
+	var count int
+	for result := range results.Next() {
+		if ctx.Err() != nil {
+			return 0, ctx.Err()
 		}
+		if result.Error != nil {
+			return 0, fmt.Errorf("cannot read query result from datastore: %w", result.Error)
+		}
+		count++
+	}
 
-		// make a new queue, same data
-		queue = dsqueue.New(ds, dsqName)
-		defer queue.Close()
-	*/
-
-	assertOrdered(cids, queue, t)
+	return count, nil
 }
 
 func TestPersistManyCids(t *testing.T) {

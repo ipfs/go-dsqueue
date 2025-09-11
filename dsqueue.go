@@ -11,9 +11,9 @@ import (
 
 	"github.com/gammazero/deque"
 	lru "github.com/hashicorp/golang-lru/v2"
-	datastore "github.com/ipfs/go-datastore"
-	namespace "github.com/ipfs/go-datastore/namespace"
-	query "github.com/ipfs/go-datastore/query"
+	"github.com/ipfs/go-datastore"
+	"github.com/ipfs/go-datastore/namespace"
+	"github.com/ipfs/go-datastore/query"
 	logging "github.com/ipfs/go-log/v2"
 )
 
@@ -99,7 +99,7 @@ func (q *DSQueue) Enqueue(item []byte) (err error) {
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			err = errors.New("failed to enqueue item: shutting down")
+			err = fmt.Errorf("failed to enqueue item: %s", r)
 		}
 	}()
 
