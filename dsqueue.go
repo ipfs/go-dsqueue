@@ -44,6 +44,7 @@ type DSQueue struct {
 	enqueue      chan string
 	clear        chan chan<- int
 	closeTimeout time.Duration
+	name         string
 }
 
 // New creates a queue for strings.
@@ -60,6 +61,7 @@ func New(ds datastore.Batching, name string, options ...Option) *DSQueue {
 		enqueue:      make(chan string),
 		clear:        make(chan chan<- int),
 		closeTimeout: cfg.closeTimeout,
+		name:         name,
 	}
 
 	go q.worker(ctx, cfg.bufferSize, cfg.dedupCacheSize, cfg.idleWriteTime)
@@ -118,6 +120,11 @@ func (q *DSQueue) Clear() int {
 	return <-rsp
 }
 
+// Name returns the name of this DSQueue instance.
+func (q *DSQueue) Name() string {
+	return q.name
+}
+
 func makeKey(item string, counter uint64) datastore.Key {
 	b64Item := base64.RawURLEncoding.EncodeToString([]byte(item))
 	return datastore.NewKey(fmt.Sprintf("%020d/%s", counter, b64Item))
@@ -144,16 +151,16 @@ func (q *DSQueue) worker(ctx context.Context, bufferSize, dedupCacheSize int, id
 	defer func() {
 		if item != "" {
 			if err := q.ds.Put(ctx, k, nil); err != nil {
-				log.Errorw("dsqueue: failed to write item to datastore", "err", err)
+				log.Errorw("failed to write item to datastore", "err", err, "qname", q.name)
 			}
 			counter++
 		}
 		if inBuf.Len() != 0 {
 			err := q.commitInput(ctx, counter, &inBuf)
 			if err != nil && !errors.Is(err, context.Canceled) {
-				log.Error(err)
+				log.Errorw("error writing items to datastore", "err", err, "qname", q.name)
 				if inBuf.Len() != 0 {
-					q.closed <- fmt.Errorf("dsqueue: %d items not written to datastore", inBuf.Len())
+					q.closed <- fmt.Errorf("%d items not written to datastore", inBuf.Len())
 				}
 			}
 		}
@@ -183,23 +190,23 @@ func (q *DSQueue) worker(ctx context.Context, bufferSize, dedupCacheSize int, id
 			if !dsEmpty {
 				head, err := q.getQueueHead(ctx)
 				if err != nil {
-					log.Errorw("dsqueue: error querying for head of queue, stopping dsqueue", "err", err)
+					log.Errorw("error querying for head of queue, stopping dsqueue", "err", err, "qname", q.name)
 					return
 				}
 				if head != nil {
 					k = datastore.NewKey(head.Key)
 					if err = q.ds.Delete(ctx, k); err != nil {
-						log.Errorw("dsqueue: error deleting queue entry, stopping dsqueue", "err", err, "key", head.Key)
+						log.Errorw("error deleting queue entry, stopping dsqueue", "err", err, "key", head.Key, "qname", q.name)
 						return
 					}
 					parts := strings.SplitN(strings.TrimPrefix(head.Key, "/"), "/", 2)
 					if len(parts) != 2 {
-						log.Errorw("dsqueue: malformed queued item, removing it from queue", "err", err, "key", head.Key)
+						log.Errorw("malformed queued item, removing it from queue", "err", err, "key", head.Key, "qname", q.name)
 						continue
 					}
 					itemBin, err := base64.RawURLEncoding.DecodeString(parts[1])
 					if err != nil {
-						log.Errorw("dsqueue: error decoding queued item, removing it from queue", "err", err, "key", head.Key)
+						log.Errorw("error decoding queued item, removing it from queue", "err", err, "key", head.Key, "qname", q.name)
 						continue
 					}
 					item = string(itemBin)
@@ -281,11 +288,11 @@ func (q *DSQueue) worker(ctx context.Context, bufferSize, dedupCacheSize int, id
 			dedupCache.Purge()
 			rmDSCount, err := q.clearDatastore(ctx)
 			if err != nil {
-				log.Errorw("dsqueue: cannot clear datastore", "err", err)
+				log.Errorw("cannot clear datastore", "err", err, "qname", q.name)
 			} else {
 				dsEmpty = true
 			}
-			log.Infow("cleared dsqueue", "fromMemory", rmMemCount, "fromDatastore", rmDSCount)
+			log.Infow("cleared dsqueue", "fromMemory", rmMemCount, "fromDatastore", rmDSCount, "qname", q.name)
 			rsp <- rmMemCount + rmDSCount
 		}
 
@@ -295,7 +302,7 @@ func (q *DSQueue) worker(ctx context.Context, bufferSize, dedupCacheSize int, id
 			err = q.commitInput(ctx, counter, &inBuf)
 			if err != nil {
 				if !errors.Is(err, context.Canceled) {
-					log.Errorw("dsqueue: error writing items to datastore, stopping dsqueue", "err", err)
+					log.Errorw("error writing items to datastore, stopping dsqueue", "err", err, "qname", q.name)
 				}
 				return
 			}
@@ -380,7 +387,7 @@ func (q *DSQueue) commitInput(ctx context.Context, counter uint64, items *deque.
 		item := items.At(i)
 		key := makeKey(item, counter)
 		if err = b.Put(ctx, key, nil); err != nil {
-			log.Errorw("dsqueue: failed to add item to batch", "err", err)
+			log.Errorw("failed to add item to batch", "err", err, "qname", q.name)
 			continue
 		}
 		counter++
@@ -389,7 +396,7 @@ func (q *DSQueue) commitInput(ctx context.Context, counter uint64, items *deque.
 	items.Clear()
 
 	if err = b.Commit(ctx); err != nil {
-		return fmt.Errorf("dsqueue: failed to commit batch to datastore: %w", err)
+		return fmt.Errorf("failed to commit batch to datastore: %w", err)
 	}
 
 	return nil
