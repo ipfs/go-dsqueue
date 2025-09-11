@@ -39,8 +39,9 @@ func getOpts(opts []Option) config {
 
 // WithBufferSize sets the limit on number of items kept in input buffer
 // memory, at which they are all written to the datastore. A value of 0 means
-// items are only written to the datastore at shutdown, and read from the
-// datastore at start.
+// the buffer size is unlimited, and items are only written to the datastore
+// when the queue has been idle more then the idle write time or when the queue
+// is closed.
 func WithBufferSize(n int) Option {
 	return func(c *config) {
 		if n < 0 {
