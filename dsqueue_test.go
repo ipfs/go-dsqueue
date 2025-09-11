@@ -132,7 +132,7 @@ func TestInitialization(t *testing.T) {
 
 func TestIdleFlush(t *testing.T) {
 	ds := sync.MutexWrap(datastore.NewMapDatastore())
-	queue := dsqueue.New(ds, dsqName, dsqueue.WithIdleWriteTime(time.Millisecond))
+	queue := dsqueue.New(ds, dsqName, dsqueue.WithBufferSize(-1), dsqueue.WithIdleWriteTime(time.Millisecond))
 	defer queue.Close()
 
 	cids := random.Cids(10)
@@ -246,6 +246,16 @@ func TestDeduplicateCids(t *testing.T) {
 	queue.Enqueue(cids[4].Bytes())
 
 	assertOrdered(cids, queue, t)
+
+	// Test with dedup cache disabled.
+	queue = dsqueue.New(ds, dsqName, dsqueue.WithDedupCacheSize(-1))
+	defer queue.Close()
+
+	cids = append(cids, cids[0], cids[0], cids[1])
+	for _, c := range cids {
+		queue.Enqueue(c.Bytes())
+	}
+	assertOrdered(cids, queue, t)
 }
 
 func TestClear(t *testing.T) {
@@ -291,4 +301,52 @@ func TestClear(t *testing.T) {
 		t.Fatal("dequeue should not return")
 	case <-time.After(10 * time.Millisecond):
 	}
+}
+
+func TestCloseTimeout(t *testing.T) {
+	ds := sync.MutexWrap(datastore.NewMapDatastore())
+	sds := &slowds{
+		Batching: ds,
+		delay:    time.Second,
+	}
+	queue := dsqueue.New(sds, dsqName, dsqueue.WithBufferSize(5), dsqueue.WithCloseTimeout(time.Microsecond))
+	defer queue.Close()
+
+	cids := random.Cids(5)
+	for _, c := range cids {
+		queue.Enqueue(c.Bytes())
+	}
+
+	err := queue.Close()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	const expectErr = "5 items not written to datastore"
+	if err.Error() != expectErr {
+		t.Fatalf("did not get expected err %q, got %q", expectErr, err.Error())
+	}
+
+	// Test with no close timeout.
+	queue = dsqueue.New(sds, dsqName, dsqueue.WithBufferSize(5), dsqueue.WithCloseTimeout(-1))
+	defer queue.Close()
+
+	for _, c := range cids {
+		queue.Enqueue(c.Bytes())
+	}
+	if err = queue.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+type slowds struct {
+	datastore.Batching
+	delay time.Duration
+}
+
+func (sds *slowds) Put(ctx context.Context, key datastore.Key, value []byte) error {
+	time.Sleep(sds.delay)
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return sds.Batching.Put(ctx, key, value)
 }
