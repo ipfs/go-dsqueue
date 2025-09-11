@@ -39,7 +39,7 @@ if c2 != c {
 
 ## Lead Maintainer
 
-[@gammazero](
+[@gammazero](https://github.com/gammazero)
 
 ## Contributing
 
