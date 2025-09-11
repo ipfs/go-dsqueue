@@ -1,17 +1,16 @@
-Repository Name
-=======================
+# go-dsqueue
 
-> Repository tagline
+[![Build Status](https://img.shields.io/github/actions/workflow/status/ipfs/go-dsqueue/go-test.yml?branch=main)](https://github.com/ipfs/go-dsqueue/actions)
+[![GoDoc](https://pkg.go.dev/badge/github.com/ipfs/go-dsqueue)](https://pkg.go.dev/github.com/ipfs/go-dsqueue)
 
-A longer repository description.
+
+> Buffered FIFO interface to the datastore
+
+The dsqueue package provides a buffered FIFO queue backed by a [Batching Datastore](https://pkg.go.dev/github.com/ipfs/go-datastore#Batching). Queued items are persisted in the datastore when the input buffer is full, after some amount of idle time, and when the queue is shuddown.
 
 ## Documentation
 
-[Insert link to documentation]() or expand with Install, Build, Usage sections.
-
-## Lead Maintainer
-
-[Your name](https://github.com/alinktoyourname)
+https://pkg.go.dev/github.com/ipfs/go-dsqueue
 
 ## Contributing
 
