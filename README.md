@@ -12,6 +12,35 @@ The dsqueue package provides a buffered FIFO queue backed by a [Batching Datasto
 
 https://pkg.go.dev/github.com/ipfs/go-dsqueue
 
+## Example
+
+```go
+ds = getBatchingDatastore() 
+dsq := dsqueue.New(ds, "ExampleQueue")
+defer dsq.Close()
+
+c, err := cid.Decode("QmPNHBy5h7f19yJDt7ip9TvmMRbqmYsa6aetkrsc1ghjLB")
+if err != nil {
+    panic(err)
+}
+
+dsq.Put(c.Bytes())
+
+out := <-dsq.Out()
+c2, err := cid.Parse(out)
+if err != nil {
+    panic(err)
+}
+
+if c2 != c {
+    fmt.Fprintln(os.Stderr, "cids are not quual")
+}
+```
+
+## Lead Maintainer
+
+[@gammazero](
+
 ## Contributing
 
 Contributions are welcome! This repository is part of the IPFS project and therefore governed by our [contributing guidelines](https://github.com/ipfs/community/blob/master/CONTRIBUTING.md).
