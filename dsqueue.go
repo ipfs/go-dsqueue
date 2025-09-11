@@ -92,8 +92,8 @@ func (q *DSQueue) Close() error {
 	return err
 }
 
-// Enqueue puts an item in the queue.
-func (q *DSQueue) Enqueue(item []byte) (err error) {
+// Put puts an item into the queue.
+func (q *DSQueue) Put(item []byte) (err error) {
 	if len(item) == 0 {
 		return
 	}
@@ -107,8 +107,8 @@ func (q *DSQueue) Enqueue(item []byte) (err error) {
 	return
 }
 
-// Dequeue returns a channel that for reading entries from the queue,
-func (q *DSQueue) Dequeue() <-chan []byte {
+// Out returns a channel that for reading entries from the queue,
+func (q *DSQueue) Out() <-chan []byte {
 	return q.dequeue
 }
 
