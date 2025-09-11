@@ -36,7 +36,7 @@ var log = logging.Logger("dsqueue")
 // then queued items can remain in memory. When the queue is closed, any
 // remaining items in memory are written to the datastore.
 type DSQueue struct {
-	close        context.CancelFunc
+	cancel       context.CancelFunc
 	closed       chan error
 	closeOnce    sync.Once
 	dequeue      chan []byte
@@ -54,7 +54,7 @@ func New(ds datastore.Batching, name string, options ...Option) *DSQueue {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	q := &DSQueue{
-		close:        cancel,
+		cancel:       cancel,
 		closed:       make(chan error, 1),
 		dequeue:      make(chan []byte),
 		ds:           namespace.Wrap(ds, datastore.NewKey("/dsq-"+name)),
@@ -84,7 +84,7 @@ func (q *DSQueue) Close() error {
 		select {
 		case <-q.closed:
 		case <-timeoutCh:
-			q.close() // force immediate shutdown
+			q.cancel() // force immediate shutdown
 			err = <-q.closed
 		}
 		close(q.dequeue) // no more output from this queue
@@ -150,21 +150,30 @@ func (q *DSQueue) worker(ctx context.Context, bufferSize, dedupCacheSize int, id
 
 	defer func() {
 		if item != "" {
+			// Write the item directly, instead of pushing it to the front of
+			// inbuf, in order to retain it's original kay, and therefore the
+			// order in the datastore, which may not be empty.
 			if err := q.ds.Put(ctx, k, nil); err != nil {
-				log.Errorw("failed to write item to datastore", "err", err, "qname", q.name)
+				if !errors.Is(err, context.Canceled) {
+					log.Errorw("failed to write item to datastore", "err", err, "qname", q.name)
+				}
+				q.closed <- fmt.Errorf("%d items not written to datastore", 1+inBuf.Len())
+				return
 			}
 		}
 		if inBuf.Len() != 0 {
 			err := q.commitInput(ctx, counter, &inBuf)
-			if err != nil && !errors.Is(err, context.Canceled) {
-				log.Errorw("error writing items to datastore", "err", err, "qname", q.name)
+			if err != nil {
+				if !errors.Is(err, context.Canceled) {
+					log.Errorw("error writing items to datastore", "err", err, "qname", q.name)
+				}
 				if inBuf.Len() != 0 {
 					q.closed <- fmt.Errorf("%d items not written to datastore", inBuf.Len())
 				}
 			}
 		}
 		if err := q.ds.Sync(ctx, datastore.NewKey("")); err != nil {
-			q.closed <- fmt.Errorf("cannot sync datastore: %w", err)
+			log.Errorw("failed to sync datastore", "err", err, "qname", q.name)
 		}
 	}()
 
@@ -378,6 +387,10 @@ func (q *DSQueue) getQueueHead(ctx context.Context) (*query.Entry, error) {
 }
 
 func (q *DSQueue) commitInput(ctx context.Context, counter uint64, items *deque.Deque[string]) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
 	b, err := q.ds.Batch(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create batch: %w", err)
