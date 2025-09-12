@@ -403,3 +403,27 @@ func (sds *slowds) Put(ctx context.Context, key datastore.Key, value []byte) err
 	}
 	return sds.Batching.Put(ctx, key, value)
 }
+
+func BenchmarkGetN(b *testing.B) {
+	ds := sync.MutexWrap(datastore.NewMapDatastore())
+	queue := dsqueue.New(ds, dsqName, dsqueue.WithDedupCacheSize(0))
+	defer queue.Close()
+
+	cids := random.Cids(25)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		for _, c := range cids {
+			queue.Put(c.Bytes())
+		}
+
+		outItems, err := queue.GetN(50)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if len(outItems) != len(cids) {
+			b.Fatalf("dequeued wrond number of items, expected %d, got %d", len(cids), len(outItems))
+		}
+	}
+}
