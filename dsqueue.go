@@ -44,6 +44,7 @@ type DSQueue struct {
 	enqueue      chan string
 	clear        chan chan<- int
 	closeTimeout time.Duration
+	getn         chan getRequest
 	name         string
 }
 
@@ -61,6 +62,7 @@ func New(ds datastore.Batching, name string, options ...Option) *DSQueue {
 		enqueue:      make(chan string),
 		clear:        make(chan chan<- int),
 		closeTimeout: cfg.closeTimeout,
+		getn:         make(chan getRequest),
 		name:         name,
 	}
 
@@ -105,6 +107,36 @@ func (q *DSQueue) Put(item []byte) (err error) {
 
 	q.enqueue <- string(item)
 	return
+}
+
+type getRequest struct {
+	n   int
+	rsp chan getResponse
+}
+
+type getResponse struct {
+	items [][]byte
+	err   error
+}
+
+// GetN retrieves up to n items that are currently available in the queue. If
+// there are no items currently available, then none are returned and GetN does
+// not wait for any.
+//
+// GetN is used to poll the DSQueue for items and return batches of those
+// items. This is the most efficient way of fetching currently available items.
+//
+// GetN and Out can both be used to read items from the DSQueue, but they
+// should not be used concurrently as items will be returned by one or the
+// other indeterminately.
+func (q *DSQueue) GetN(n int) ([][]byte, error) {
+	rsp := make(chan getResponse)
+	q.getn <- getRequest{
+		n:   n,
+		rsp: rsp,
+	}
+	getRsp := <-rsp
+	return getRsp.items, getRsp.err
 }
 
 // Out returns a channel that for reading entries from the queue,
@@ -264,9 +296,43 @@ func (q *DSQueue) worker(ctx context.Context, bufferSize, dedupCacheSize int, id
 			if bufferSize != 0 && inBuf.Len() >= bufferSize {
 				commit = true
 			}
+		case getRequest := <-q.getn:
+			n := getRequest.n
+			rspChan := getRequest.rsp
+			var outItems [][]byte
+
+			if item != "" {
+				outItems = append(outItems, []byte(item))
+
+				if !dsEmpty {
+					outItems, err = q.readDatastore(ctx, n-len(outItems), outItems)
+					if err != nil {
+						rspChan <- getResponse{
+							err: err,
+						}
+						continue
+					}
+				}
+
+				item = ""
+				idle = false
+			}
+			if len(outItems) < n {
+				for itm := range inBuf.IterPopFront() {
+					outItems = append(outItems, []byte(itm))
+					if len(outItems) == n {
+						break
+					}
+				}
+			}
+			rspChan <- getResponse{
+				items: outItems,
+			}
+
 		case dequeue <- []byte(item):
 			item = ""
 			idle = false
+
 		case <-batchTimer.C:
 			if idle {
 				if inBuf.Len() != 0 {
@@ -413,4 +479,68 @@ func (q *DSQueue) commitInput(ctx context.Context, counter uint64, items *deque.
 	}
 
 	return nil
+}
+
+// readDatastore reads at most n items from the data store queue, in order, and
+// appends them to items slice. Items are batch-deleted from the datastore as
+// they are read. The modified items slice is returned.
+func (q *DSQueue) readDatastore(ctx context.Context, n int, items [][]byte) ([][]byte, error) {
+	qry := query.Query{
+		KeysOnly: true,
+		Orders:   []query.Order{query.OrderByKey{}},
+		Limit:    n,
+	}
+	results, err := q.ds.Query(ctx, qry)
+	if err != nil {
+		return nil, err
+	}
+	defer results.Close()
+
+	batch, err := q.ds.Batch(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("cannot create datastore batch: %w", err)
+	}
+	var delCount int
+
+	for result := range results.Next() {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if result.Error != nil {
+			return nil, result.Error
+		}
+
+		if err = batch.Delete(ctx, datastore.NewKey(result.Key)); err != nil {
+			return nil, fmt.Errorf("error deleting queue item: %w", err)
+		}
+		delCount++
+
+		if delCount >= DefaultBufferSize {
+			delCount = 0
+			if err = batch.Commit(ctx); err != nil {
+				return nil, fmt.Errorf("cannot commit datastore updates: %w", err)
+			}
+		}
+
+		parts := strings.SplitN(strings.TrimPrefix(result.Key, "/"), "/", 2)
+		if len(parts) != 2 {
+			log.Errorw("malformed queued item, removing it from queue", "err", err, "key", result.Key, "qname", q.name)
+			continue
+		}
+		itemBin, err := base64.RawURLEncoding.DecodeString(parts[1])
+		if err != nil {
+			log.Errorw("error decoding queued item, removing it from queue", "err", err, "key", result.Key, "qname", q.name)
+			continue
+		}
+		items = append(items, itemBin)
+	}
+
+	if err = batch.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("cannot commit datastore updated: %w", err)
+	}
+	if err = q.ds.Sync(ctx, datastore.NewKey("")); err != nil {
+		return nil, fmt.Errorf("cannot sync datastore: %w", err)
+	}
+
+	return items, nil
 }

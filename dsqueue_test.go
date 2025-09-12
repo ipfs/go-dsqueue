@@ -104,6 +104,35 @@ func TestBasicOperation(t *testing.T) {
 	}
 }
 
+func TestGetN(t *testing.T) {
+	ds := sync.MutexWrap(datastore.NewMapDatastore())
+	queue := dsqueue.New(ds, dsqName)
+	defer queue.Close()
+
+	items := []string{"apple", "banana", "cherry"}
+	for _, item := range items {
+		queue.Put([]byte(item))
+	}
+
+	outItems, err := queue.GetN(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(outItems) != len(items) {
+		t.Fatalf("dequeued wrond number of items, expected %d, got %d", len(items), len(outItems))
+	}
+
+	outItems, err = queue.GetN(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(outItems) != 0 {
+		t.Fatal("shoul not get anymore items from queue")
+	}
+}
+
 func TestMangledData(t *testing.T) {
 	ds := sync.MutexWrap(datastore.NewMapDatastore())
 
