@@ -41,7 +41,7 @@ type DSQueue struct {
 	closeOnce    sync.Once
 	dequeue      chan []byte
 	ds           datastore.Batching
-	enqueue      chan string
+	enqueue      chan []byte
 	clear        chan chan<- int
 	closeTimeout time.Duration
 	getn         chan getRequest
@@ -59,7 +59,7 @@ func New(ds datastore.Batching, name string, options ...Option) *DSQueue {
 		closed:       make(chan error, 1),
 		dequeue:      make(chan []byte),
 		ds:           namespace.Wrap(ds, datastore.NewKey("/dsq-"+name)),
-		enqueue:      make(chan string),
+		enqueue:      make(chan []byte),
 		clear:        make(chan chan<- int),
 		closeTimeout: cfg.closeTimeout,
 		getn:         make(chan getRequest),
@@ -105,7 +105,7 @@ func (q *DSQueue) Put(item []byte) (err error) {
 		}
 	}()
 
-	q.enqueue <- string(item)
+	q.enqueue <- item
 	return
 }
 
@@ -157,8 +157,8 @@ func (q *DSQueue) Name() string {
 	return q.name
 }
 
-func makeKey(item string, counter uint64) datastore.Key {
-	b64Item := base64.RawURLEncoding.EncodeToString([]byte(item))
+func makeKey(item []byte, counter uint64) datastore.Key {
+	b64Item := base64.RawURLEncoding.EncodeToString(item)
 	return datastore.NewKey(fmt.Sprintf("%016x/%s", counter, b64Item))
 }
 
@@ -167,9 +167,9 @@ func (q *DSQueue) worker(ctx context.Context, bufferSize, dedupCacheSize int, id
 	defer close(q.closed)
 
 	var (
-		item    string
+		item    []byte
 		counter uint64
-		inBuf   deque.Deque[string]
+		inBuf   deque.Deque[[]byte]
 	)
 
 	const baseCap = 1024
@@ -181,7 +181,7 @@ func (q *DSQueue) worker(ctx context.Context, bufferSize, dedupCacheSize int, id
 	}
 
 	defer func() {
-		if item != "" {
+		if item != nil {
 			// Write the item directly, instead of pushing it to the front of
 			// inbuf, in order to retain it's original kay, and therefore the
 			// order in the datastore, which may not be empty.
@@ -226,7 +226,7 @@ func (q *DSQueue) worker(ctx context.Context, bufferSize, dedupCacheSize int, id
 	}
 
 	for {
-		if item == "" {
+		if item == nil {
 			if !dsEmpty {
 				head, err := q.getQueueHead(ctx)
 				if err != nil {
@@ -244,12 +244,11 @@ func (q *DSQueue) worker(ctx context.Context, bufferSize, dedupCacheSize int, id
 						log.Errorw("malformed queued item, removing it from queue", "err", err, "key", head.Key, "qname", q.name)
 						continue
 					}
-					itemBin, err := base64.RawURLEncoding.DecodeString(parts[1])
+					item, err = base64.RawURLEncoding.DecodeString(parts[1])
 					if err != nil {
 						log.Errorw("error decoding queued item, removing it from queue", "err", err, "key", head.Key, "qname", q.name)
 						continue
 					}
-					item = string(itemBin)
 				} else {
 					dsEmpty = true
 				}
@@ -265,7 +264,7 @@ func (q *DSQueue) worker(ctx context.Context, bufferSize, dedupCacheSize int, id
 
 		// If c != cid.Undef set dequeue and attempt write.
 		var dequeue chan []byte
-		if item != "" {
+		if item != nil {
 			dequeue = q.dequeue
 		}
 
@@ -275,15 +274,16 @@ func (q *DSQueue) worker(ctx context.Context, bufferSize, dedupCacheSize int, id
 				return
 			}
 			if dedupCache != nil {
-				if found, _ := dedupCache.ContainsOrAdd(toQueue, struct{}{}); found {
+				cacheItem := string(toQueue)
+				if found, _ := dedupCache.ContainsOrAdd(cacheItem, struct{}{}); found {
 					// update recentness in LRU cache
-					dedupCache.Add(toQueue, struct{}{})
+					dedupCache.Add(cacheItem, struct{}{})
 					continue
 				}
 			}
 			idle = false
 
-			if item == "" {
+			if item == nil {
 				// Use this CID as the next output since there was nothing in
 				// the datastore or buffer previously.
 				item = toQueue
@@ -301,8 +301,8 @@ func (q *DSQueue) worker(ctx context.Context, bufferSize, dedupCacheSize int, id
 			rspChan := getRequest.rsp
 			var outItems [][]byte
 
-			if item != "" {
-				outItems = append(outItems, []byte(item))
+			if item != nil {
+				outItems = append(outItems, item)
 
 				if !dsEmpty {
 					outItems, err = q.readDatastore(ctx, n-len(outItems), outItems)
@@ -314,12 +314,12 @@ func (q *DSQueue) worker(ctx context.Context, bufferSize, dedupCacheSize int, id
 					}
 				}
 
-				item = ""
+				item = nil
 				idle = false
 			}
 			if len(outItems) < n {
 				for itm := range inBuf.IterPopFront() {
-					outItems = append(outItems, []byte(itm))
+					outItems = append(outItems, itm)
 					if len(outItems) == n {
 						break
 					}
@@ -329,8 +329,8 @@ func (q *DSQueue) worker(ctx context.Context, bufferSize, dedupCacheSize int, id
 				items: outItems,
 			}
 
-		case dequeue <- []byte(item):
-			item = ""
+		case dequeue <- item:
+			item = nil
 			idle = false
 
 		case <-batchTimer.C:
@@ -339,7 +339,7 @@ func (q *DSQueue) worker(ctx context.Context, bufferSize, dedupCacheSize int, id
 					commit = true
 				} else {
 					if inBuf.Cap() > baseCap {
-						inBuf = deque.Deque[string]{}
+						inBuf = deque.Deque[[]byte]{}
 						inBuf.SetBaseCap(baseCap)
 					}
 				}
@@ -352,10 +352,10 @@ func (q *DSQueue) worker(ctx context.Context, bufferSize, dedupCacheSize int, id
 
 		case rsp := <-q.clear:
 			var rmMemCount int
-			if item != "" {
+			if item != nil {
 				rmMemCount = 1
 			}
-			item = ""
+			item = nil
 			k = datastore.Key{}
 			idle = false
 			rmMemCount += inBuf.Len()
@@ -452,7 +452,7 @@ func (q *DSQueue) getQueueHead(ctx context.Context) (*query.Entry, error) {
 	return &r.Entry, r.Error
 }
 
-func (q *DSQueue) commitInput(ctx context.Context, counter uint64, items *deque.Deque[string]) error {
+func (q *DSQueue) commitInput(ctx context.Context, counter uint64, items *deque.Deque[[]byte]) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -527,12 +527,12 @@ func (q *DSQueue) readDatastore(ctx context.Context, n int, items [][]byte) ([][
 			log.Errorw("malformed queued item, removing it from queue", "err", err, "key", result.Key, "qname", q.name)
 			continue
 		}
-		itemBin, err := base64.RawURLEncoding.DecodeString(parts[1])
+		item, err := base64.RawURLEncoding.DecodeString(parts[1])
 		if err != nil {
 			log.Errorw("error decoding queued item, removing it from queue", "err", err, "key", result.Key, "qname", q.name)
 			continue
 		}
-		items = append(items, itemBin)
+		items = append(items, item)
 	}
 
 	if err = batch.Commit(ctx); err != nil {
