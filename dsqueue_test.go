@@ -18,7 +18,7 @@ import (
 
 const dsqName = "testq"
 
-func assertOrdered(cids []cid.Cid, q *dsqueue.DSQueue, t *testing.T) {
+func assertOrdered(t *testing.T, cids []cid.Cid, q *dsqueue.DSQueue) {
 	t.Helper()
 
 	var count int
@@ -60,47 +60,78 @@ func TestBasicOperation(t *testing.T) {
 	case <-time.After(time.Millisecond):
 	}
 
+	items := []string{"apple", "banana", "cherry"}
+
 	out := make(chan []string)
 	go func() {
 		var outStrs []string
-		for {
-			select {
-			case dq, open := <-queue.Out():
-				if !open {
-					out <- outStrs
-					return
-				}
-				dqItem := string(dq)
-				t.Log("got:", dqItem)
-				outStrs = append(outStrs, dqItem)
+		for dq := range queue.Out() {
+			dqItem := string(dq)
+			outStrs = append(outStrs, dqItem)
+			if len(outStrs) == len(items) {
+				break
 			}
 		}
+		out <- outStrs
 	}()
 
-	items := []string{"apple", "banana", "cherry"}
 	for _, item := range items {
 		queue.Put([]byte(item))
-	}
-
-	time.Sleep(time.Second)
-	err := queue.Close()
-	if err != nil {
-		t.Fatal(err)
 	}
 
 	qout := <-out
 
 	if len(qout) != len(items) {
-		t.Fatalf("dequeued wrond number of items, expected %d, got %d", len(items), len(qout))
+		t.Fatalf("dequeued wrong number of items, expected %d, got %d", len(items), len(qout))
 	}
 
-	if err = queue.Close(); err != nil {
+	err := queue.Close()
+	if err != nil {
 		t.Fatal(err)
 	}
 
 	err = queue.Put([]byte(items[0]))
 	if err == nil {
 		t.Fatal("expected error calling Enqueue after Close")
+	}
+}
+
+func TestGetN(t *testing.T) {
+	ds := sync.MutexWrap(datastore.NewMapDatastore())
+	queue := dsqueue.New(ds, dsqName, dsqueue.WithBufferSize(5), dsqueue.WithDedupCacheSize(0))
+	defer queue.Close()
+
+	cids := random.Cids(29)
+	for _, c := range cids {
+		queue.Put(c.Bytes())
+	}
+
+	outItems, err := queue.GetN(50)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(outItems) != len(cids) {
+		t.Fatalf("dequeued wrond number of items, expected %d, got %d", len(cids), len(outItems))
+	}
+
+	for i := range outItems {
+		outCid, err := cid.Parse(outItems[i])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if outCid != cids[i] {
+			t.Fatal("retrieved items out of order")
+		}
+	}
+
+	outItems, err = queue.GetN(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(outItems) != 0 {
+		t.Fatal("shoul not get anymore items from queue")
 	}
 }
 
@@ -125,8 +156,7 @@ func TestMangledData(t *testing.T) {
 	}
 
 	// expect to only see the valid cids we entered
-	expected := cids
-	assertOrdered(expected, queue, t)
+	assertOrdered(t, cids, queue)
 }
 
 func TestInitialization(t *testing.T) {
@@ -139,7 +169,7 @@ func TestInitialization(t *testing.T) {
 		queue.Put(c.Bytes())
 	}
 
-	assertOrdered(cids[:5], queue, t)
+	assertOrdered(t, cids[:5], queue)
 
 	err := queue.Close()
 	if err != nil {
@@ -150,7 +180,7 @@ func TestInitialization(t *testing.T) {
 	queue = dsqueue.New(ds, dsqName)
 	defer queue.Close()
 
-	assertOrdered(cids[5:], queue, t)
+	assertOrdered(t, cids[5:], queue)
 }
 
 func TestIdleFlush(t *testing.T) {
@@ -230,7 +260,7 @@ func TestPersistManyCids(t *testing.T) {
 	queue = dsqueue.New(ds, dsqName)
 	defer queue.Close()
 
-	assertOrdered(cids, queue, t)
+	assertOrdered(t, cids, queue)
 }
 
 func TestPersistOneCid(t *testing.T) {
@@ -250,7 +280,7 @@ func TestPersistOneCid(t *testing.T) {
 	queue = dsqueue.New(ds, dsqName)
 	defer queue.Close()
 
-	assertOrdered(cids, queue, t)
+	assertOrdered(t, cids, queue)
 }
 
 func TestDeduplicateCids(t *testing.T) {
@@ -268,7 +298,7 @@ func TestDeduplicateCids(t *testing.T) {
 	queue.Put(cids[0].Bytes())
 	queue.Put(cids[4].Bytes())
 
-	assertOrdered(cids, queue, t)
+	assertOrdered(t, cids, queue)
 
 	// Test with dedup cache disabled.
 	queue = dsqueue.New(ds, dsqName, dsqueue.WithDedupCacheSize(-1))
@@ -278,7 +308,7 @@ func TestDeduplicateCids(t *testing.T) {
 	for _, c := range cids {
 		queue.Put(c.Bytes())
 	}
-	assertOrdered(cids, queue, t)
+	assertOrdered(t, cids, queue)
 }
 
 func TestClear(t *testing.T) {
