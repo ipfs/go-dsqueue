@@ -101,10 +101,9 @@ func (q *DSQueue) Put(item []byte) (err error) {
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("failed to enqueue item: %s", r)
+			err = fmt.Errorf("%s queue closed", q.name)
 		}
 	}()
-
 	q.enqueue <- item
 	return
 }
@@ -130,6 +129,9 @@ type getResponse struct {
 // should not be used concurrently as items will be returned by one or the
 // other indeterminately.
 func (q *DSQueue) GetN(n int) ([][]byte, error) {
+	if n == 0 {
+		return nil, nil
+	}
 	rsp := make(chan getResponse)
 	q.getn <- getRequest{
 		n:   n,
@@ -346,9 +348,6 @@ func (q *DSQueue) worker(ctx context.Context, bufferSize, dedupCacheSize int, id
 			}
 			idle = true
 			batchTimer.Reset(idleWriteTime)
-
-		case <-ctx.Done():
-			return
 
 		case rsp := <-q.clear:
 			var rmMemCount int

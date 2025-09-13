@@ -94,6 +94,11 @@ func TestBasicOperation(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error calling Enqueue after Close")
 	}
+
+	_, err = queue.GetN(5)
+	if err == nil {
+		t.Fatal("expected error calling GetN after Close")
+	}
 }
 
 func TestGetN(t *testing.T) {
@@ -141,7 +146,7 @@ func TestMangledData(t *testing.T) {
 	// put bad data in the queue
 	qds := namespace.Wrap(ds, datastore.NewKey("/dsq-"+dsqName))
 	item := "borked"
-	queueKey := datastore.NewKey(fmt.Sprintf("%s", item))
+	queueKey := datastore.NewKey(item)
 	err := qds.Put(context.Background(), queueKey, []byte(item))
 	if err != nil {
 		t.Fatal(err)
