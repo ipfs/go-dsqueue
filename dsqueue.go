@@ -133,10 +133,17 @@ func (q *DSQueue) GetN(n int) ([][]byte, error) {
 		return nil, nil
 	}
 	rsp := make(chan getResponse)
-	q.getn <- getRequest{
+	req := getRequest{
 		n:   n,
 		rsp: rsp,
 	}
+
+	select {
+	case q.getn <- req:
+	case <-q.closed:
+		return nil, fmt.Errorf("%s queue closed", q.name)
+	}
+
 	getRsp := <-rsp
 	return getRsp.items, getRsp.err
 }
