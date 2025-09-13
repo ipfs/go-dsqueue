@@ -132,7 +132,8 @@ func (q *DSQueue) GetN(n int) ([][]byte, error) {
 	if n == 0 {
 		return nil, nil
 	}
-	rsp := make(chan getResponse)
+	// Buffer response channel so write can happen even if reader gone.
+	rsp := make(chan getResponse, 1)
 	req := getRequest{
 		n:   n,
 		rsp: rsp,

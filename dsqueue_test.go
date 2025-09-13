@@ -414,7 +414,7 @@ func BenchmarkGetN(b *testing.B) {
 	queue := dsqueue.New(ds, dsqName, dsqueue.WithDedupCacheSize(0))
 	defer queue.Close()
 
-	cids := random.Cids(25)
+	cids := random.Cids(64)
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -423,7 +423,7 @@ func BenchmarkGetN(b *testing.B) {
 			queue.Put(c.Bytes())
 		}
 
-		outItems, err := queue.GetN(50)
+		outItems, err := queue.GetN(100)
 		if err != nil {
 			b.Fatal(err)
 		}
