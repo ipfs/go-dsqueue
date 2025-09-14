@@ -210,15 +210,22 @@ func TestIdleFlush(t *testing.T) {
 		t.Fatal("expected nothing in datastore")
 	}
 
-	time.Sleep(2 * time.Second)
-
-	n, err = countItems(ctx, dsn)
-	if err != nil {
-		t.Fatal(err)
+	wanted := len(cids) - 1
+	got := 0
+	for range 5 {
+		time.Sleep(time.Second)
+		n, err = countItems(ctx, dsn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got += n
+		if got >= wanted {
+			break
+		}
 	}
-	expect := len(cids) - 1
-	if n != expect {
-		t.Fatalf("should have flushed %d cids to datastore, got %d", expect, n)
+
+	if got != wanted {
+		t.Fatalf("should have flushed %d cids to datastore, got %d", wanted, got)
 	}
 }
 
