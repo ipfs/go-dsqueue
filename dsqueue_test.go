@@ -297,7 +297,7 @@ func TestPersistOneCid(t *testing.T) {
 
 func TestDeduplicateCids(t *testing.T) {
 	ds := sync.MutexWrap(datastore.NewMapDatastore())
-	queue := dsqueue.New(ds, dsqName)
+	queue := dsqueue.New(ds, dsqName, dsqueue.WithDedupCacheSize(2*1024))
 	defer queue.Close()
 
 	cids := random.Cids(5)

@@ -367,7 +367,9 @@ func (q *DSQueue) worker(ctx context.Context, bufferSize, dedupCacheSize int, id
 			idle = false
 			rmMemCount += inBuf.Len()
 			inBuf.Clear()
-			dedupCache.Purge()
+			if dedupCache != nil {
+				dedupCache.Purge()
+			}
 			rmDSCount, err := q.clearDatastore(ctx)
 			if err != nil {
 				log.Errorw("cannot clear datastore", "err", err, "qname", q.name)
