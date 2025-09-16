@@ -5,10 +5,9 @@ import (
 )
 
 const (
-	DefaultBufferSize     = 16 * 1024
-	DefaultDedupCacheSize = 2 * 1024
-	DefaultIdleWriteTime  = time.Minute
-	DefaultCloseTimeout   = 10 * time.Second
+	DefaultBufferSize    = 16 * 1024
+	DefaultIdleWriteTime = time.Minute
+	DefaultCloseTimeout  = 10 * time.Second
 )
 
 // config contains all options for DSQueue.
@@ -25,10 +24,9 @@ type Option func(*config)
 // getOpts creates a config and applies Options to it.
 func getOpts(opts []Option) config {
 	cfg := config{
-		bufferSize:     DefaultBufferSize,
-		dedupCacheSize: DefaultDedupCacheSize,
-		idleWriteTime:  DefaultIdleWriteTime,
-		closeTimeout:   DefaultCloseTimeout,
+		bufferSize:    DefaultBufferSize,
+		idleWriteTime: DefaultIdleWriteTime,
+		closeTimeout:  DefaultCloseTimeout,
 	}
 
 	for _, opt := range opts {
@@ -52,7 +50,9 @@ func WithBufferSize(n int) Option {
 }
 
 // WithDedupCacheSize sets the size of the LRU cache used to deduplicate items
-// in the queue. A value of 0 disables the dedup cache.
+// in the queue.
+//
+// By default, the deduplication cache is disabled (size = 0).
 func WithDedupCacheSize(n int) Option {
 	return func(c *config) {
 		if n < 0 {
