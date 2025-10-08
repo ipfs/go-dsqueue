@@ -18,12 +18,12 @@ github.com/ipfs/go-block-format v0.2.2 h1:uecCTgRwDIXyZPgYspaLXoMiMmxQpSx2aq34eN
 github.com/ipfs/go-block-format v0.2.2/go.mod h1:vmuefuWU6b+9kIU0vZJgpiJt1yicQz9baHXE8qR+KB8=
 github.com/ipfs/go-cid v0.5.0 h1:goEKKhaGm0ul11IHA7I6p1GmKz8kEYniqFopaB5Otwg=
 github.com/ipfs/go-cid v0.5.0/go.mod h1:0L7vmeNXpQpUS9vt+yEARkJ8rOg43DF3iPgn4GIN0mk=
-github.com/ipfs/go-datastore v0.8.4 h1:vXEsd76T3KIOSKXizjhmS3ICGMl+oOSjpLSxE3v8/Wc=
-github.com/ipfs/go-datastore v0.8.4/go.mod h1:uT77w/XEGrvJWwHgdrMr8bqCN6ZTW9gzmi+3uK+ouHg=
+github.com/ipfs/go-datastore v0.9.0 h1:WocriPOayqalEsueHv6SdD4nPVl4rYMfYGLD4bqCZ+w=
+github.com/ipfs/go-datastore v0.9.0/go.mod h1:uT77w/XEGrvJWwHgdrMr8bqCN6ZTW9gzmi+3uK+ouHg=
 github.com/ipfs/go-detect-race v0.0.1 h1:qX/xay2W3E4Q1U7d9lNs1sU9nvguX0a7319XbyQ6cOk=
 github.com/ipfs/go-detect-race v0.0.1/go.mod h1:8BNT7shDZPo99Q74BpGMK+4D8Mn4j46UU0LZ723meps=
-github.com/ipfs/go-log/v2 v2.8.1 h1:Y/X36z7ASoLJaYIJAL4xITXgwf7RVeqb1+/25aq/Xk0=
-github.com/ipfs/go-log/v2 v2.8.1/go.mod h1:NyhTBcZmh2Y55eWVjOeKf8M7e4pnJYM3yDZNxQBWEEY=
+github.com/ipfs/go-log/v2 v2.8.2 h1:nVG4nNHUwwI/sTs9Bi5iE8sXFQwXs3AjkkuWhg7+Y2I=
+github.com/ipfs/go-log/v2 v2.8.2/go.mod h1:UhIYAwMV7Nb4ZmihUxfIRM2Istw/y9cAk3xaK+4Zs2c=
 github.com/ipfs/go-test v0.2.3 h1:Z/jXNAReQFtCYyn7bsv/ZqUwS6E7iIcSpJ2CuzCvnrc=
 github.com/ipfs/go-test v0.2.3/go.mod h1:QW8vSKkwYvWFwIZQLGQXdkt9Ud76eQXRQ9Ao2H+cA1o=
 github.com/klauspost/cpuid/v2 v2.2.10 h1:tBs3QSyvjDyFTq3uoc/9xFpCuOsJQFNPiAhYdw2skhE=
