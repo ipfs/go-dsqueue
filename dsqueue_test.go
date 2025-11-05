@@ -377,7 +377,8 @@ func TestStress(t *testing.T) {
 	}
 	defer dstore.Close()
 
-	queue := dsqueue.New(dstore, dsqName, dsqueue.WithBufferSize(1024), dsqueue.WithIdleWriteTime(100*time.Millisecond))
+	const idleWriteTime = 100 * time.Millisecond
+	queue := dsqueue.New(dstore, dsqName, dsqueue.WithBufferSize(1024), dsqueue.WithIdleWriteTime(idleWriteTime))
 	defer queue.Close()
 
 	var totalIn int
@@ -389,7 +390,6 @@ func TestStress(t *testing.T) {
 		}
 	}
 
-	time.Sleep(200 * time.Millisecond)
 	var totalOut int
 	for range queue.Out() {
 		totalOut++
@@ -398,6 +398,22 @@ func TestStress(t *testing.T) {
 		}
 	}
 	t.Log("got", totalOut, "cids")
+	if totalOut != 500 {
+		t.Fatalf("did not read expected number of CIDs, expected 500, got %d", totalOut)
+	}
+
+	time.Sleep(2 * idleWriteTime)
+
+	for range queue.Out() {
+		totalOut++
+		if totalOut == 1000 {
+			break
+		}
+	}
+	t.Log("got", totalOut, "cids")
+	if totalOut != 1000 {
+		t.Fatalf("did not read expected number of CIDs, expected 1000, got %d", totalOut)
+	}
 
 	fetch := 1024
 	for {
@@ -418,7 +434,7 @@ func TestStress(t *testing.T) {
 	}
 
 	if totalOut != totalIn {
-		t.Fatal("read different numbner of items than written to queue")
+		t.Fatalf("read different numbner of items than written to queue, expected %d, got %d", totalIn, totalOut)
 	}
 }
 
