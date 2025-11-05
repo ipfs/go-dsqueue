@@ -12,6 +12,7 @@ import (
 	"github.com/ipfs/go-datastore/namespace"
 	"github.com/ipfs/go-datastore/query"
 	"github.com/ipfs/go-datastore/sync"
+	leveldb "github.com/ipfs/go-ds-leveldb"
 	"github.com/ipfs/go-dsqueue"
 	"github.com/ipfs/go-test/random"
 )
@@ -365,6 +366,59 @@ func TestClear(t *testing.T) {
 	case <-queue.Out():
 		t.Fatal("dequeue should not return")
 	case <-time.After(10 * time.Millisecond):
+	}
+}
+
+func TestStress(t *testing.T) {
+	dataStorePath := t.TempDir()
+	dstore, err := leveldb.NewDatastore(dataStorePath, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dstore.Close()
+
+	queue := dsqueue.New(dstore, dsqName, dsqueue.WithBufferSize(1024), dsqueue.WithIdleWriteTime(100*time.Millisecond))
+	defer queue.Close()
+
+	var totalIn int
+	for range 2048 {
+		cids := random.Cids(1024)
+		for _, c := range cids {
+			queue.Put(c.Bytes())
+			totalIn++
+		}
+	}
+
+	time.Sleep(200 * time.Millisecond)
+	var totalOut int
+	for range queue.Out() {
+		totalOut++
+		if totalOut == 500 {
+			break
+		}
+	}
+	t.Log("got", totalOut, "cids")
+
+	fetch := 1024
+	for {
+		out, err := queue.GetN(fetch)
+		if err != nil {
+			t.Fatal(err)
+		}
+		totalOut += len(out)
+		t.Log("got", len(out), "cids", "total", totalOut)
+		if totalOut >= totalIn {
+			break
+		}
+		if fetch == 65536 {
+			fetch = 1024
+		} else {
+			fetch <<= 1
+		}
+	}
+
+	if totalOut != totalIn {
+		t.Fatal("read different numbner of items than written to queue")
 	}
 }
 
