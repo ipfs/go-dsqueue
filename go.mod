@@ -3,16 +3,18 @@ module github.com/ipfs/go-dsqueue
 go 1.24.0
 
 require (
-	github.com/gammazero/deque v1.1.0
+	github.com/gammazero/deque v1.2.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/ipfs/go-cid v0.5.0
 	github.com/ipfs/go-datastore v0.9.0
+	github.com/ipfs/go-ds-leveldb v0.5.2
 	github.com/ipfs/go-log/v2 v2.8.2
 	github.com/ipfs/go-test v0.2.3
 )
 
 require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
+	github.com/golang/snappy v0.0.0-20180518054509-2e65f85255db // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/ipfs/boxo v0.32.0 // indirect
 	github.com/ipfs/go-block-format v0.2.2 // indirect
@@ -30,6 +32,7 @@ require (
 	github.com/multiformats/go-multihash v0.2.3 // indirect
 	github.com/multiformats/go-varint v0.0.7 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
+	github.com/syndtr/goleveldb v1.0.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/crypto v0.40.0 // indirect
