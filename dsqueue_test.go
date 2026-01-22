@@ -1,3 +1,5 @@
+//go:build go1.25
+
 package dsqueue_test
 
 import (
@@ -5,6 +7,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/ipfs/go-cid"
@@ -190,44 +193,48 @@ func TestInitialization(t *testing.T) {
 }
 
 func TestIdleFlush(t *testing.T) {
-	ds := sync.MutexWrap(datastore.NewMapDatastore())
-	queue := dsqueue.New(ds, dsqName, dsqueue.WithBufferSize(-1), dsqueue.WithIdleWriteTime(time.Millisecond))
-	defer queue.Close()
+	synctest.Test(t, func(t *testing.T) {
+		ds := sync.MutexWrap(datastore.NewMapDatastore())
+		queue := dsqueue.New(ds, dsqName, dsqueue.WithBufferSize(-1), dsqueue.WithIdleWriteTime(time.Millisecond))
+		defer queue.Close()
 
-	cids := random.Cids(10)
-	for _, c := range cids {
-		queue.Put(c.Bytes())
-	}
+		cids := random.Cids(10)
+		for _, c := range cids {
+			queue.Put(c.Bytes())
+		}
 
-	dsn := namespace.Wrap(ds, datastore.NewKey("/dsq-"+dsqName))
-	time.Sleep(10 * time.Millisecond)
+		dsn := namespace.Wrap(ds, datastore.NewKey("/dsq-"+dsqName))
+		time.Sleep(10 * time.Millisecond)
+		synctest.Wait()
 
-	ctx := context.Background()
-	n, err := countItems(ctx, dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n != 0 {
-		t.Fatal("expected nothing in datastore")
-	}
-
-	wanted := len(cids) - 1
-	got := 0
-	for range 5 {
-		time.Sleep(time.Second)
-		n, err = countItems(ctx, dsn)
+		ctx := context.Background()
+		n, err := countItems(ctx, dsn)
 		if err != nil {
 			t.Fatal(err)
 		}
-		got += n
-		if got >= wanted {
-			break
+		if n != 0 {
+			t.Fatal("expected nothing in datastore")
 		}
-	}
 
-	if got != wanted {
-		t.Fatalf("should have flushed %d cids to datastore, got %d", wanted, got)
-	}
+		wanted := len(cids) - 1
+		got := 0
+		for range 5 {
+			time.Sleep(time.Second)
+			synctest.Wait()
+			n, err = countItems(ctx, dsn)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got += n
+			if got >= wanted {
+				break
+			}
+		}
+
+		if got != wanted {
+			t.Fatalf("should have flushed %d cids to datastore, got %d", wanted, got)
+		}
+	})
 }
 
 func countItems(ctx context.Context, ds datastore.Datastore) (int, error) {
@@ -439,38 +446,40 @@ func TestStress(t *testing.T) {
 }
 
 func TestCloseTimeout(t *testing.T) {
-	ds := sync.MutexWrap(datastore.NewMapDatastore())
-	sds := &slowds{
-		Batching: ds,
-		delay:    time.Second,
-	}
-	queue := dsqueue.New(sds, dsqName, dsqueue.WithBufferSize(5), dsqueue.WithCloseTimeout(time.Microsecond))
-	defer queue.Close()
+	synctest.Test(t, func(t *testing.T) {
+		ds := sync.MutexWrap(datastore.NewMapDatastore())
+		sds := &slowds{
+			Batching: ds,
+			delay:    time.Second,
+		}
+		queue := dsqueue.New(sds, dsqName, dsqueue.WithBufferSize(5), dsqueue.WithCloseTimeout(time.Millisecond))
+		defer queue.Close()
 
-	cids := random.Cids(5)
-	for _, c := range cids {
-		queue.Put(c.Bytes())
-	}
+		cids := random.Cids(5)
+		for _, c := range cids {
+			queue.Put(c.Bytes())
+		}
 
-	err := queue.Close()
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	const expectErr = "5 items not written to datastore"
-	if err.Error() != expectErr {
-		t.Fatalf("did not get expected err %q, got %q", expectErr, err.Error())
-	}
+		err := queue.Close()
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		const expectErr = "5 items not written to datastore"
+		if err.Error() != expectErr {
+			t.Fatalf("did not get expected err %q, got %q", expectErr, err.Error())
+		}
 
-	// Test with no close timeout.
-	queue = dsqueue.New(sds, dsqName, dsqueue.WithBufferSize(5), dsqueue.WithCloseTimeout(-1))
-	defer queue.Close()
+		// Test with no close timeout.
+		queue = dsqueue.New(sds, dsqName, dsqueue.WithBufferSize(5), dsqueue.WithCloseTimeout(-1))
+		defer queue.Close()
 
-	for _, c := range cids {
-		queue.Put(c.Bytes())
-	}
-	if err = queue.Close(); err != nil {
-		t.Fatal(err)
-	}
+		for _, c := range cids {
+			queue.Put(c.Bytes())
+		}
+		if err = queue.Close(); err != nil {
+			t.Fatal(err)
+		}
+	})
 }
 
 type slowds struct {
