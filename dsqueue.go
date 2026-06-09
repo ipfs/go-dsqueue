@@ -44,6 +44,7 @@ type DSQueue struct {
 	enqueue      chan []byte
 	clear        chan chan<- int
 	closeTimeout time.Duration
+	empty        chan struct{}
 	getn         chan getRequest
 	name         string
 }
@@ -62,6 +63,7 @@ func New(ds datastore.Batching, name string, options ...Option) *DSQueue {
 		enqueue:      make(chan []byte),
 		clear:        make(chan chan<- int),
 		closeTimeout: cfg.closeTimeout,
+		empty:        make(chan struct{}),
 		getn:         make(chan getRequest),
 		name:         name,
 	}
@@ -92,6 +94,13 @@ func (q *DSQueue) Close() error {
 		close(q.dequeue) // no more output from this queue
 	})
 	return err
+}
+
+// Empty returns a channel that is signaled when the queue is empty. This is
+// useful for exiting select when there are currently no more queued items to
+// read.
+func (q *DSQueue) Empty() <-chan struct{} {
+	return q.empty
 }
 
 // Put puts an item into the queue.
@@ -222,6 +231,7 @@ func (q *DSQueue) worker(ctx context.Context, bufferSize, dedupCacheSize int, id
 	var (
 		commit  bool
 		dsEmpty bool
+		empty   chan struct{}
 		err     error
 		idle    bool
 	)
@@ -271,6 +281,9 @@ func (q *DSQueue) worker(ctx context.Context, bufferSize, dedupCacheSize int, id
 		var dequeue chan []byte
 		if item != nil {
 			dequeue = q.dequeue
+			empty = nil
+		} else {
+			empty = q.empty
 		}
 
 		select {
@@ -301,6 +314,8 @@ func (q *DSQueue) worker(ctx context.Context, bufferSize, dedupCacheSize int, id
 			if bufferSize != 0 && inBuf.Len() >= bufferSize {
 				commit = true
 			}
+		case empty <- struct{}{}:
+
 		case getRequest := <-q.getn:
 			n := getRequest.n
 			rspChan := getRequest.rsp

@@ -103,6 +103,69 @@ func TestBasicOperation(t *testing.T) {
 	}
 }
 
+func TestReadUntilEmpty(t *testing.T) {
+	ds := sync.MutexWrap(datastore.NewMapDatastore())
+	q := dsqueue.New(ds, dsqName, dsqueue.WithBufferSize(5), dsqueue.WithDedupCacheSize(0))
+	defer q.Close()
+
+	cids := random.Cids(29)
+	for _, c := range cids {
+		q.Put(c.Bytes())
+	}
+
+	var i int
+
+loop:
+	for {
+		select {
+		case outItem := <-q.Out():
+			outCid, err := cid.Parse(outItem)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if outCid != cids[i] {
+				t.Fatal("retrieved items out of order")
+			}
+			i++
+		case <-q.Empty():
+			break loop
+		}
+	}
+
+	if i != len(cids) {
+		t.Fatalf("dequeued wrond number of items, expected %d, got %d", len(cids), i)
+	}
+
+	// Check still empty.
+	select {
+	case <-q.Empty():
+	case <-q.Out():
+		t.Fatal("should not have any more data")
+	case <-time.After(time.Second):
+		t.Fatal("did not receive empty signal")
+	}
+
+	q.Put(cids[0].Bytes())
+
+	// Check for data item.
+	select {
+	case <-q.Out():
+	case <-q.Empty():
+		t.Fatal("should not have received empty signal")
+	case <-time.After(time.Second):
+		t.Fatal("did not receive any data")
+	}
+
+	// Check for empty.
+	select {
+	case <-q.Empty():
+	case <-q.Out():
+		t.Fatal("should not have any more data")
+	case <-time.After(time.Second):
+		t.Fatal("did not receive empty signal")
+	}
+}
+
 func TestGetN(t *testing.T) {
 	ds := sync.MutexWrap(datastore.NewMapDatastore())
 	queue := dsqueue.New(ds, dsqName, dsqueue.WithBufferSize(5), dsqueue.WithDedupCacheSize(0))
