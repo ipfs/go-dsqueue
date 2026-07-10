@@ -1,6 +1,6 @@
 module github.com/ipfs/go-dsqueue
 
-go 1.25
+go 1.25.0
 
 require (
 	github.com/gammazero/deque v1.2.1
@@ -35,9 +35,9 @@ require (
 	github.com/syndtr/goleveldb v1.0.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.1 // indirect
-	golang.org/x/crypto v0.47.0 // indirect
+	golang.org/x/crypto v0.52.0 // indirect
 	golang.org/x/exp v0.0.0-20260112195511-716be5621a96 // indirect
-	golang.org/x/sys v0.40.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
 	lukechampine.com/blake3 v1.4.1 // indirect
 )
