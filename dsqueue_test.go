@@ -212,7 +212,7 @@ func TestMangledData(t *testing.T) {
 	qds := namespace.Wrap(ds, datastore.NewKey("/dsq-"+dsqName))
 	item := "borked"
 	queueKey := datastore.NewKey(item)
-	err := qds.Put(context.Background(), queueKey, []byte(item))
+	err := qds.Put(t.Context(), queueKey, []byte(item))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +268,7 @@ func TestIdleFlush(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 		synctest.Wait()
 
-		ctx := context.Background()
+		ctx := t.Context()
 		n, err := countItems(ctx, dsn)
 		if err != nil {
 			t.Fatal(err)
@@ -399,7 +399,8 @@ func TestClear(t *testing.T) {
 	queue := dsqueue.New(ds, dsqName)
 	defer queue.Close()
 
-	for _, c := range random.Cids(cidCount) {
+	rnd := random.New()
+	for _, c := range rnd.Cids(cidCount) {
 		queue.Put(c.Bytes())
 	}
 
@@ -412,7 +413,7 @@ func TestClear(t *testing.T) {
 	queue = dsqueue.New(ds, dsqName)
 	defer queue.Close()
 
-	for _, c := range random.Cids(cidCount) {
+	for _, c := range rnd.Cids(cidCount) {
 		queue.Put(c.Bytes())
 	}
 
@@ -449,9 +450,10 @@ func TestStress(t *testing.T) {
 	queue := dsqueue.New(dstore, dsqName, dsqueue.WithBufferSize(1024), dsqueue.WithIdleWriteTime(idleWriteTime))
 	defer queue.Close()
 
+	rnd := random.New()
 	var totalIn int
 	for range 2048 {
-		cids := random.Cids(1024)
+		cids := rnd.Cids(1024)
 		for _, c := range cids {
 			queue.Put(c.Bytes())
 			totalIn++
